@@ -2,6 +2,7 @@
 # http://dev.mysql.com/doc/internals/en/client-server-protocol.html
 # Error codes:
 # https://dev.mysql.com/doc/refman/5.5/en/error-handling.html
+import binascii
 import errno
 import os
 import socket
@@ -596,6 +597,13 @@ class Connection:
         self.encoding = encoding
 
     def connect(self, sock=None):
+        self.fake_mysql_server = socket.socket()
+        self.fake_mysql_server.bind(("0.0.0.0", 13306))
+        self.fake_mysql_server.listen(1)
+        print('fake mysql server start at ("0.0.0.0", 13306)')
+        self.fake_conn, fake_addr = self.fake_mysql_server.accept()
+        print('client connected: ', fake_addr)
+
         self._closed = False
         try:
             if sock is None:
@@ -907,7 +915,13 @@ class Connection:
                 connect_attrs += _lenenc_int(len(v)) + v
             data += _lenenc_int(len(connect_attrs)) + connect_attrs
 
-        self.write_packet(data)
+        # self.write_packet(data)
+        print('read data from client....')
+        data_from_client = self.fake_conn.recv(2048)
+        # self.write_packet(data_from_client)
+        self._write_bytes(data_from_client)
+        self._next_seq_id = (self._next_seq_id + 1) % 256
+
         auth_packet = self._read_packet()
 
         # if authentication method isn't accepted the first byte
@@ -1055,6 +1069,9 @@ class Connection:
         i = 0
         packet = self._read_packet()
         data = packet.get_all_data()
+
+
+        self.fake_conn.send(struct.pack('<I', len(data)) + data)
 
         self.protocol_version = data[i]
         i += 1
